@@ -1,0 +1,165 @@
+---
+title: "Genetic Algorithm"
+author: "Charles Whorton"
+date: '2023-01-24'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+if (!require(tidyverse)){
+  install.packages('tidyverse')
+}
+library(tidyverse)
+
+if (!require(readxl)){
+  install.packages('readxl')
+}
+library(readxl)
+
+if (!require(writexl)){
+  install.packages('writexl')
+}
+library(writexl)
+
+if (!require(GA)){
+  install.packages('GA')
+}
+library(GA)
+
+```
+
+
+```{r}
+file_path = "/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022 MLS Goals_Added and Salary Data.xlsx"
+
+Player_Goals_Added = read_excel(file_path, sheet = "Player_Goals_Added")
+Player_Salary = read_excel(file_path, sheet = "Player_Salary")
+
+nrow(Player_Goals_Added) #707
+nrow(Player_Salary) # 829
+
+# head(Player_Salary)
+
+df = Player_Goals_Added %>% 
+  anti_join(Player_Salary, by = "Player")
+df
+
+Player_Salary %>% 
+  filter(Player_Salary$Player == "Juan Hernández")
+
+
+```
+
+```{r}
+path = "/Users/charleswhorton/Downloads/2022-Fall-Salary-Guide.xlsx"
+
+data = read_excel(path)
+data
+
+write_xlsx(data,"/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022_MLSPA_Salary_data.xlsx")
+
+```
+
+```{r}
+
+
+
+```
+
+```{r}
+player = c('1','2','3','4','5','6','7','8','9')
+cost=c(150, 375, 600, 275, 550, 875, 575, 615, 315)
+quality=c(3,5,7,2,5,9,8,7,6)
+data=data.frame(player, cost*1000, quality)
+max_cost=750000
+
+```
+
+
+
+```{r}
+#1 means that we bring the item, while 0 means that we left the item
+chromosomes=c(0,1,1,0,0,0,0,0,1)
+data[chromosomes==1,]
+
+```
+
+
+
+```{r}
+#create the function that we want to optimize
+fitness=function(x)
+{
+  current_quality=x%*%data$quality
+  current_cost=x%*%data$cost
+  if(current_cost>max_cost)
+  {
+    return(0)
+  }
+  else
+  {
+    return(current_quality)
+  }
+}
+
+```
+
+
+
+```{r}
+GA=ga(type='binary',
+      fitness=fitness,
+      nBits=nrow(data),
+      maxiter=30,
+      popSize=50,
+      seed=1234,
+      keepBest=TRUE)
+summary(GA)
+plot(GA)
+
+```
+
+
+
+```{r}
+chromosomes_final=c(1,1,1,1,1,0,0,1,1)
+cat(chromosomes_final%*%data$weight)
+
+
+```
+
+
+
+```{r}
+ga_lrSelection(GA)
+
+
+```
+
+
+
+```{r}
+gareal_tourSelection(GA)
+
+
+```
+
+
+
+```{r}
+
+
+
+```
+
+
