@@ -7,6 +7,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(scipen = -1)
+
 ```
 
 ## R Markdown
@@ -15,7 +17,7 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-```{r}
+```{r warning=FALSE}
 if (!require(tidyverse)){
   install.packages('tidyverse')
 }
@@ -31,125 +33,217 @@ if (!require(writexl)){
 }
 library(writexl)
 
-if (!require(GA)){
-  install.packages('GA')
+if (!require(lpSolve)){
+  install.packages('lpSolve')
 }
-library(GA)
+library(lpSolve)
+
+
+# if (!require(adagio)){
+#   install.packages('adagio')
+# }
+# library(adagio)
+# 
+# if (!require(GA)){
+#   install.packages('GA')
+# }
+# library(GA)
+
 
 ```
 
 
-```{r}
+```{r message=FALSE}
+
 file_path = "/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022 MLS Goals_Added and Salary Data.xlsx"
 
 Player_Goals_Added = read_excel(file_path, sheet = "Player_Goals_Added")
-Player_Salary = read_excel(file_path, sheet = "Player_Salary")
+Player_Salary = read_excel(file_path, sheet = "Player_Salary") %>%
+  select(-c("Season"))
 
-nrow(Player_Goals_Added) #707
-nrow(Player_Salary) # 829
+MLSPA_Player_Salary_202209 = 
+  read_csv("http://s3.amazonaws.com/mlspa/9_2_2022-Roster-Freeze-Salary-List.csv?mtime=20221017131703") %>%
+  select(-c("Nickname")) %>% 
+  mutate(`2022 Base Salary` = floor(as.numeric(gsub("[$,]", "", `2022 Base Salary`)))) %>%
+  mutate(`2022 Guar. Comp.` = floor(as.numeric(gsub("[$,]", "", `2022 Guar. Comp.`)))) %>%
+  mutate(Source = 9)
 
-# head(Player_Salary)
+MLSPA_Player_Salary202204 = 
+  read_csv("http://s3.amazonaws.com/mlspa/2022_salary_list_4.15__for_site.csv?mtime=20220517164257") %>%
+  mutate(`2022 Base Salary` = floor(as.numeric(gsub("[$,]", "", `2022 Base Salary`)))) %>%
+  mutate(`2022 Guar. Comp.` = floor(as.numeric(gsub("[$,]", "", `2022 Guar. Comp.`)))) %>%
+  mutate(Source = 4)
 
-df = Player_Goals_Added %>% 
-  anti_join(Player_Salary, by = "Player")
-df
+MLSPA_Player_Salary202204 = rename(MLSPA_Player_Salary202204, "Position" = "Playing Position")
 
-Player_Salary %>% 
-  filter(Player_Salary$Player == "Juan Hernández")
+MLSPA_Player_Salary =
+  union(MLSPA_Player_Salary_202209, MLSPA_Player_Salary202204)
 
+MLSPA_Player_Salary = MLSPA_Player_Salary %>%
+  mutate(Player = paste(MLSPA_Player_Salary$'First Name', MLSPA_Player_Salary$'Last Name', sep = " "))
 
-```
+MLSPA_Player_Salary = MLSPA_Player_Salary %>%
+  relocate(c("Player", "Club", "Position", "2022 Base Salary", "2022 Guar. Comp."))
 
-```{r}
-path = "/Users/charleswhorton/Downloads/2022-Fall-Salary-Guide.xlsx"
+MLSPA_Player_Salary = rename(MLSPA_Player_Salary,
+                             "Team" = "Club",
+                             "Base Salary" = "2022 Base Salary",
+                             "Guaranteed Compensation" = "2022 Guar. Comp.") %>%
+  select(-c("Last Name", "First Name", Team, Position))
 
-data = read_excel(path)
-data
+MLSPA_Player_Salary = MLSPA_Player_Salary %>%
+  arrange(desc(Player)) %>%
+  group_by(Player) %>%
+  mutate(Rank = row_number(desc(Source))) %>%
+  filter(Rank == 1)
 
-write_xlsx(data,"/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022_MLSPA_Salary_data.xlsx")
-
-```
-
-```{r}
-
-
-
-```
-
-```{r}
-player = c('1','2','3','4','5','6','7','8','9')
-cost=c(150, 375, 600, 275, 550, 875, 575, 615, 315)
-quality=c(3,5,7,2,5,9,8,7,6)
-data=data.frame(player, cost*1000, quality)
-max_cost=750000
-
-```
-
-
-
-```{r}
-#1 means that we bring the item, while 0 means that we left the item
-chromosomes=c(0,1,1,0,0,0,0,0,1)
-data[chromosomes==1,]
-
+Salary_Data =
+  full_join(Player_Salary, MLSPA_Player_Salary %>% select(-c(Source, Rank)), by = 'Player')
 ```
 
 
 
 ```{r}
-#create the function that we want to optimize
-fitness=function(x)
-{
-  current_quality=x%*%data$quality
-  current_cost=x%*%data$cost
-  if(current_cost>max_cost)
-  {
-    return(0)
-  }
-  else
-  {
-    return(current_quality)
-  }
-}
+
+Player_Data = Player_Goals_Added %>% 
+  left_join(Salary_Data, by = "Player")
+
+Player_Data = Player_Data %>% 
+  mutate('Guaranteed Compensation.x' 
+         = coalesce(Player_Data$'Guaranteed Compensation.x',Player_Data$'Guaranteed Compensation.y')) %>%
+  mutate('Base Salary.x' 
+         = coalesce(Player_Data$'Base Salary.x',Player_Data$'Base Salary.y')) %>%
+  mutate('Position.x' 
+         = coalesce(Player_Data$'Position.x',Player_Data$'Position.y')) %>%
+  mutate('Team.x' 
+         = coalesce(Player_Data$'Team.x',Player_Data$'Team.y')) %>%
+  select(-c("Team.y",
+            "Position.y",
+            "Base Salary.y", 
+            "Guaranteed Compensation.y")) %>% 
+  rename("Position" = "Position.x",
+         "Team" = "Team.x",
+         "Base_Salary" = "Base Salary.x",
+         "Guaranteed_Compensation" = "Guaranteed Compensation.x",
+         "Goals_Added" = "Goals Added") %>% 
+  drop_na(Base_Salary)
+
+Player_Data %>%
+  filter(is.na(Base_Salary))
+
+Player_Data <- Player_Data %>% 
+  mutate(Log_Goals_Added = log10(Goals_Added+(abs(min(Player_Data$Goals_Added))+1.01)))
+
+head(Player_Data,n = 50)
+  
+Player_Data %>%
+  filter(Guaranteed_Compensation <= 450000)
+
+```
+
+
+```{r warning=FALSE}
+# player = c("Hany Mukhtar", "José Cifuentes", "Bill Tuiloma", "Jack Elliott", "Alan Franco", "Walker Zimmerman")
+# w = c( 1926250,  411750, 304450, 793750, 667500, 2345210)
+# p = c(5.43, 4.49, 3.54, 2.32, 2.26, 2.71)*100
+# cap = c(1000000, 685000)
+# is = mknapsack(w = Player_Data$Guaranteed_Compensation, p = Player_Data$Log_Goals_Added, cap)
+
+# ksack1 = is$ksack == 1
+# ksack2 = is$ksack == 2
+# player[ksack1]
+# player[ksack2]
+
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE}
+
+# Define the constraint
+# constraint_value = 150000
+# player = c("Hany Mukhtar", "José Cifuentes", "Bill Tuiloma", "Jack Elliott", "Alan Franco", "Walker Zimmerman")
+# w = c(926250, 411750, 304450, 793750, 667500, 2345210)
+# p = c(5.43, 4.49, 3.54, 2.32, 2.26, 2.71)
+
+```
+
+
+```{r}
+
+max_salary = 350000
+constraint_dir <- c("<=", "=")
+constraint_rhs <- c(max_salary, 1)
+# constraints = cbind(Player_Data$Guaranteed_Compensation, rep(1, nrow(Player_Data)))
+constraints = matrix(c(Player_Data$Guaranteed_Compensation, rep(1, nrow(Player_Data))), ncol = 2, byrow = TRUE)
+
+# working
+# lp_result <- lp(direction = "max", obj = Player_Data$Log_Goals_Added, const.mat = Player_Data$Guaranteed_Compensation, const.dir = constraint_dir, const.rhs = constraint_rhs, all.bin = TRUE)
+
+lp_result <- lp(direction = "max", 
+                objective.in = Player_Data$Log_Goals_Added, 
+                # const.mat = constraints, 
+                const.mat = Player_Data$Guaranteed_Compensation,
+                const.dir = "<=", 
+                # const.dir = constraint_dir, 
+                const.rhs = 350000
+                # const.rhs = constraint_rhs
+                , all.bin = TRUE
+                )
+
+selected_players <- Player_Data[lp_result$solution == 1, ]
+
+selected_players
+
 
 ```
 
 
 
 ```{r}
-GA=ga(type='binary',
-      fitness=fitness,
-      nBits=nrow(data),
-      maxiter=30,
-      popSize=50,
-      seed=1234,
-      keepBest=TRUE)
-summary(GA)
-plot(GA)
+
+# # Define the fitness function
+# fitness <- function(x, weights, values) {
+#   if (sum(x * weights) > constraint_value) {
+#     return(-Inf)
+#   } else {
+#     return(sum(x * values))
+#   }
+# }
+# 
+# # Define the optimization problem
+# ga_out = ga(type = "binary",
+#             fitness = fitness,
+#             weights = 
+#               Player_Data$Guaranteed_Compensation,
+#               # w,
+#             values = 
+#               Player_Data$Log_Goals_Added,
+#               # p,
+#             popSize = 1,
+#             nBits = 
+#               nrow(Player_Data),
+#               # length(player),
+#             maxiter = 10)
+# 
+# ga_out
+# # ga_out@solution
+# 
+# # Extract the optimal solution
+# selected_indices <- which(ga_out@solution==1)
+# Player_Data$Player[Player_Data$Guaranteed_Compensation==3545830]
+# 
+# # Print the selected players
+# print(Player_Data[selected_indices, c("Player", "Goals_Added", "Guaranteed_Compensation")])
+# # print(c(player[selected_indices], w[selected_indices], p[selected_indices]))
+
 
 ```
 
 
 
 ```{r}
-chromosomes_final=c(1,1,1,1,1,0,0,1,1)
-cat(chromosomes_final%*%data$weight)
-
-
-```
-
-
-
-```{r}
-ga_lrSelection(GA)
-
-
-```
-
-
-
-```{r}
-gareal_tourSelection(GA)
 
 
 ```
