@@ -1,0 +1,124 @@
+---
+title: "predictive_model_sandbox"
+author: "Charles Whorton"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r message=FALSE}
+
+if (!require(tidyverse)){
+  install.packages('tidyverse')
+}
+library(tidyverse)
+
+if (!require(jsonlite)){
+  install.packages('jsonlite')
+}
+library(jsonlite)
+
+if (!require(httr)){
+  install.packages('httr')
+}
+library(httr)
+
+```
+
+
+
+
+```{r }
+
+owner <- "cfw412"
+repo <- "capstone"
+path <- "Data/MLS%20Player%20Season%20Stats" 
+
+# Construct the URL for the API endpoint with the main branch
+url <- paste0("https://api.github.com/repos/", owner, "/", repo, "/contents/", path, "?ref=main")
+
+# Make a GET request to the API endpoint and convert the response to a data frame
+response <- GET(url)
+data <- content(response, "text")
+df <- fromJSON(data)
+
+```
+
+
+
+```{r }
+
+# Initialize the test dataframe
+statsbomb_data <- data.frame()
+
+# Loop over the rows in the df dataframe where name does not contain ".pdf"
+for (i in 1:nrow(df[!grepl(".pdf", df$name),])) {
+  # Extract the download URL for the current row
+  url <- df[i, "download_url"]
+  
+  # Read the JSON data and convert it to a data frame
+  data <- fromJSON(url) %>% as.data.frame()
+  
+  # Add the data to the statsbomb_data dataframe
+  statsbomb_data <- rbind(statsbomb_data, data)
+}
+
+
+
+```
+
+
+
+```{r }
+
+
+
+```
+
+
+
+```{r }
+
+
+
+```
+
+
+
+```{r }
+
+
+
+```
+
+
+
+```{r }
+
+
+
+```
+
+
+
+```{r }
+
+
+
+```
+
+
+
+```{r }
+
+
+
+```
+
+
+

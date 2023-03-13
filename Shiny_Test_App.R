@@ -120,7 +120,7 @@ shinyApp(
     sidebarLayout(
       sidebarPanel(
         numericInput(inputId = "input_number", 
-                     label = "Enter a number", 
+                     label = "Enter the row number", 
                      value = 1),
         actionButton(inputId = "btn_run", 
                      label = "Run")
