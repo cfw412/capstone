@@ -76,7 +76,7 @@ download.file(ga_salary_data_url, temp_file, mode = "wb")
 
 ## Comment all lines above and up to the library import statements
   ## Uncomment the below line and add files to your local machine 
-# temp_file = "/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022_MLS_GoalsAdded_and_Salary_Data.xlsx"
+# temp_file = ".../capstone/Data/2022_MLS_GoalsAdded_and_Salary_Data.xlsx"
 
 Player_Goals_Added <- read_excel(temp_file, sheet = "Player_Goals_Added")
 Player_Salary = read_excel(temp_file, sheet = "Player_Salary") %>%
@@ -149,84 +149,6 @@ Player_Data %>%
 
 Player_Data <- data.frame(Player_Data %>% 
   mutate(Log_Goals_Added = log10(Goals_Added+(abs(min(Player_Data$Goals_Added))+1.01))))
-
-# ### GA Functions
-# 
-# ### Initialize population
-# myInit <- function(k){
-# 
-#   function(GA){
-#     m <- matrix(0, ncol = GA@nBits, nrow = GA@popSize)
-# 
-#     for(i in seq_len(GA@popSize))
-#       m[i, sample(GA@nBits, k)] <- 1
-# 
-#     m
-#   }
-# }
-# 
-# 
-# ### Crossover function
-# myCrossover <- function(GA, parents){
-# 
-#   parents <- GA@population[parents,] %>%
-#     apply(1, function(x) which(x == 1)) %>%
-#     t()
-# 
-#   parents_diff <- list("vector", 2)
-#   parents_diff[[1]] <- setdiff(parents[2,], parents[1,])
-#   parents_diff[[2]] <- setdiff(parents[1,], parents[2,])
-# 
-#   children_ind <- list("vector", 2)
-#   for(i in 1:2){
-#     k <- length(parents_diff[[i]])
-#     change_k <- sample(k, sample(ceiling(k/2), 1))
-#     children_ind[[i]] <- if(length(change_k) > 0){
-#       c(parents[i, -change_k], parents_diff[[i]][change_k])
-#     } else {
-#       parents[i,]
-#     }
-#   }
-# 
-#   children <- matrix(0, nrow = 2, ncol = GA@nBits)
-#   for(i in 1:2)
-#     children[i, children_ind[[i]]] <- 1
-# 
-#   list(children = children, fitness = c(NA, NA))
-# }
-# 
-# ### Mutation function
-# myMutation <- function(GA, parent){
-#   
-#   print(nrow(nBits))
-#   
-#   ind <- which(GA@population[parent,] == 1)
-#   n_change <- sample(sel_pop, 1)
-#   ind[sample(length(ind), n_change)] <- sample(setdiff(seq_len(GA@nBits), ind), n_change)
-#   parent <- integer(GA@nBits)
-#   parent[ind] <- 1
-# 
-#   parent
-# }
-# 
-# 
-# ### Fitness function (Objective function)
-# fitness=function(x)
-# {
-#   print(nrow(x))
-#   print(nrow(Player_Data))
-#   
-#   current_goals_added=x%*%Player_Data$Log_Goals_Added
-#   current_salary=x%*%Player_Data$Guaranteed_Compensation
-#   if(current_salary>max_salary)
-#   {
-#     return(0) # Return a very low fitness value for solutions that violate the salary constraint
-#   }
-#   else
-#   {
-#     return(current_goals_added)
-#   }
-# }
 
 ### Shiny App ###
 
@@ -301,7 +223,6 @@ shinyApp(
           m
         }
       }
-      
       
       ### Crossover function
       myCrossover <- function(GA, parents){
