@@ -17,7 +17,8 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-```{r warning=FALSE}
+```{r warning=FALSE, message=FALSE}
+
 if (!require(tidyverse)){
   install.packages('tidyverse')
 }
@@ -27,6 +28,11 @@ if (!require(readxl)){
   install.packages('readxl')
 }
 library(readxl)
+
+if (!require(httr)){
+  install.packages('httr')
+}
+library(httr)
 
 if (!require(writexl)){
   install.packages('writexl')
@@ -38,27 +44,47 @@ if (!require(lpSolve)){
 }
 library(lpSolve)
 
-
-# if (!require(adagio)){
-#   install.packages('adagio')
-# }
-# library(adagio)
-# 
 if (!require(GA)){
   install.packages('GA')
 }
 library(GA)
 
-
 ```
 
 
-```{r message=FALSE}
 
-file_path = "/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022 MLS Goals_Added and Salary Data.xlsx"
 
-Player_Goals_Added = read_excel(file_path, sheet = "Player_Goals_Added")
-Player_Salary = read_excel(file_path, sheet = "Player_Salary") %>%
+```{r}
+owner <- "cfw412"
+repo <- "capstone"
+path <- "Data" 
+
+# Construct the URL for the API endpoint with the main branch
+url <- paste0("https://api.github.com/repos/", owner, "/", repo, "/contents/", path, "?ref=main")
+
+# Make a GET request to the API endpoint and convert the response to a data frame
+response <- GET(url)
+data <- content(response, "text")
+df <- fromJSON(data)
+```
+
+
+
+
+```{r warning=FALSE, message=FALSE}
+
+ga_salary_data <- data.frame()
+
+ga_salary_data_url = df %>%
+  filter(name == "2022_MLS_GoalsAdded_and_Salary_Data.xlsx") %>%
+  select('download_url') %>%
+  pull()
+
+temp_file <- tempfile()
+download.file(ga_salary_data_url, temp_file, mode = "wb")
+
+Player_Goals_Added <- read_excel(temp_file, sheet = "Player_Goals_Added")
+Player_Salary = read_excel(temp_file, sheet = "Player_Salary") %>%
   select(-c("Season"))
 
 MLSPA_Player_Salary_202209 = 
@@ -134,11 +160,7 @@ Player_Data %>%
 Player_Data <- Player_Data %>% 
   mutate(Log_Goals_Added = log10(Goals_Added+(abs(min(Player_Data$Goals_Added))+1.01)))
 
-head(Player_Data,n = 50)
-
-# write.csv(Player_Data, 
-#           "/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Player_Data.csv", 
-#           row.names=FALSE)
+# head(Player_Data,n = 50)
 
 ```
 
@@ -246,7 +268,15 @@ plot(GA)
 data.frame("Total_GA" = GA@fitnessValue, "Total_Comp" = sum(data[GA@solution == 1,]$salary))
 data[GA@solution == 1,]
 
+Player_Data = data.frame(head(Player_Data, n = n))
+Player_Data[GA@solution == 1,]$Guaranteed_Compensation
 
+data[GA@solution == 1,]$salary
+
+Player_Data[GA@solution == 1,] %>%
+  select(c('Player',
+           'Goals_Added',
+           'Guaranteed_Compensation'))
 
 
 

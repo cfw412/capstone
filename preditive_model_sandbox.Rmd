@@ -37,7 +37,7 @@ library(httr)
 
 owner <- "cfw412"
 repo <- "capstone"
-path <- "Data/MLS%20Player%20Season%20Stats" 
+path <- "Data/MLS_Player_Season_Stats" 
 
 # Construct the URL for the API endpoint with the main branch
 url <- paste0("https://api.github.com/repos/", owner, "/", repo, "/contents/", path, "?ref=main")
@@ -67,6 +67,10 @@ for (i in 1:nrow(df[!grepl(".pdf", df$name),])) {
   # Add the data to the statsbomb_data dataframe
   statsbomb_data <- rbind(statsbomb_data, data)
 }
+
+head(statsbomb_data, n = 100)
+
+
 
 
 

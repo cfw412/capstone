@@ -11,7 +11,6 @@ library(tidyverse)
 
 if (!require(DT)){
   install.packages('DT')
-  
 }
 library(DT)
 
@@ -30,12 +29,48 @@ if (!require(GA)){
 }
 library(GA)
 
+if (!require(httr)){
+  install.packages('httr')
+}
+library(httr)
+
 ### Import and Clean Data ###
 
-file_path = "/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022 MLS Goals_Added and Salary Data.xlsx"
+# Steps to pull files from repo
+# this could go in a function to de-duplicate code
+owner <- "cfw412"
+repo <- "capstone"
+path <- "Data" 
 
-Player_Goals_Added = read_excel(file_path, sheet = "Player_Goals_Added")
-Player_Salary = read_excel(file_path, sheet = "Player_Salary") %>%
+# Construct the URL for the API endpoint with the main branch
+url <- paste0("https://api.github.com/repos/", owner, "/", repo, "/contents/", path, "?ref=main")
+
+# Make a GET request to the API endpoint and convert the response to a data frame
+response <- GET(url)
+data <- content(response, "text")
+df <- fromJSON(data)
+
+ga_salary_data <- data.frame()
+
+ga_salary_data_url = df %>%
+  filter(name == "2022_MLS_GoalsAdded_and_Salary_Data.xlsx") %>%
+  select('download_url') %>%
+  pull()
+
+# Steps to pull files from a different folder in the repo
+path <- "Data/MLS_Player_Season_Stats" 
+
+url <- paste0("https://api.github.com/repos/", owner, "/", repo, "/contents/", path, "?ref=main")
+
+response <- GET(url)
+data <- content(response, "text")
+df <- fromJSON(data)
+
+temp_file <- tempfile()
+download.file(ga_salary_data_url, temp_file, mode = "wb")
+
+Player_Goals_Added <- read_excel(temp_file, sheet = "Player_Goals_Added")
+Player_Salary = read_excel(temp_file, sheet = "Player_Salary") %>%
   select(-c("Season"))
 
 MLSPA_Player_Salary_202209 = 
@@ -103,7 +138,7 @@ Player_Data = Player_Data %>%
 Player_Data %>%
   filter(is.na(Base_Salary))
 
-Player_Data = Player_Data %>% 
+Player_Data <- Player_Data %>% 
   mutate(Log_Goals_Added = log10(Goals_Added+(abs(min(Player_Data$Goals_Added))+1.01)))
 
 ### Shiny App ###
