@@ -1,0 +1,651 @@
+---
+title: "GA convergence test"
+author: "Charles Whorton"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+if (!require(tidyverse)){
+  install.packages('tidyverse')
+}
+library(tidyverse)
+
+if (!require(DT)){
+  install.packages('DT')
+}
+library(DT)
+
+if (!require(htmlwidgets)){
+  install.packages('htmlwidgets')
+}
+library(htmlwidgets)
+
+if (!require(readxl)){
+  install.packages('readxl')
+}
+library(readxl)
+
+if (!require(GA)){
+  install.packages('GA')
+}
+library(GA)
+
+if (!require(httr)){
+  install.packages('httr')
+}
+library(httr)
+
+if (!require(jsonlite)){
+  install.packages('jsonlite')
+}
+library(jsonlite)
+
+if (!require(ggplot2)){
+  install.packages('ggplot2')
+}
+library(ggplot2)
+
+```
+
+```{r}
+
+### Import and Clean Data ###
+temp_file = "/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022_MLS_GoalsAdded_and_Salary_Data.xlsx"
+
+Player_Goals_Added <- read_excel(temp_file, sheet = "Player_Goals_Added")
+Player_Salary = read_excel(temp_file, sheet = "Player_Salary") %>%
+  select(-c("Season"))
+
+MLSPA_Player_Salary_202209 =
+  read_csv("http://s3.amazonaws.com/mlspa/9_2_2022-Roster-Freeze-Salary-List.csv?mtime=20221017131703") %>%
+  select(-c("Nickname")) %>%
+  mutate(`2022 Base Salary` = floor(as.numeric(gsub("[$,]", "", `2022 Base Salary`)))) %>%
+  mutate(`2022 Guar. Comp.` = floor(as.numeric(gsub("[$,]", "", `2022 Guar. Comp.`)))) %>%
+  mutate(Source = 9)
+
+MLSPA_Player_Salary202204 = 
+  read_csv("http://s3.amazonaws.com/mlspa/2022_salary_list_4.15__for_site.csv?mtime=20220517164257") %>%
+  mutate(`2022 Base Salary` = floor(as.numeric(gsub("[$,]", "", `2022 Base Salary`)))) %>%
+  mutate(`2022 Guar. Comp.` = floor(as.numeric(gsub("[$,]", "", `2022 Guar. Comp.`)))) %>%
+  mutate(Source = 4)
+
+MLSPA_Player_Salary202204 = rename(MLSPA_Player_Salary202204, "Position" = "Playing Position")
+
+MLSPA_Player_Salary =
+  union(MLSPA_Player_Salary_202209, MLSPA_Player_Salary202204)
+  # MLSPA_Player_Salary202204
+
+MLSPA_Player_Salary = MLSPA_Player_Salary %>%
+  mutate(Player = paste(MLSPA_Player_Salary$'First Name', MLSPA_Player_Salary$'Last Name', sep = " "))
+
+MLSPA_Player_Salary = MLSPA_Player_Salary %>%
+  relocate(c("Player", "Club", "Position", "2022 Base Salary", "2022 Guar. Comp."))
+
+MLSPA_Player_Salary = rename(MLSPA_Player_Salary,
+                             "Team" = "Club",
+                             "Base Salary" = "2022 Base Salary",
+                             "Guaranteed Compensation" = "2022 Guar. Comp.") %>%
+  select(-c("Last Name", "First Name", Team, Position))
+
+MLSPA_Player_Salary = MLSPA_Player_Salary %>%
+  arrange(desc(Player)) %>%
+  group_by(Player) %>%
+  mutate(Rank = row_number(desc(Source))) %>%
+  filter(Rank == 1)
+
+Salary_Data =
+  full_join(Player_Salary, MLSPA_Player_Salary %>% select(-c(Source, Rank)), by = 'Player')
+
+Player_Data = Player_Goals_Added %>% 
+  left_join(Salary_Data, by = "Player")
+
+Player_Data = Player_Data %>% 
+  mutate('Guaranteed Compensation.x' 
+         = coalesce(Player_Data$'Guaranteed Compensation.x',Player_Data$'Guaranteed Compensation.y')) %>%
+  mutate('Base Salary.x' 
+         = coalesce(Player_Data$'Base Salary.x',Player_Data$'Base Salary.y')) %>%
+  mutate('Position.x' 
+         = coalesce(Player_Data$'Position.x',Player_Data$'Position.y')) %>%
+  mutate('Team.x' 
+         = coalesce(Player_Data$'Team.x',Player_Data$'Team.y')) %>%
+  select(-c("Team.y",
+            "Position.y",
+            "Base Salary.y", 
+            "Guaranteed Compensation.y")) %>% 
+  rename("Position" = "Position.x",
+         "Team" = "Team.x",
+         "Base_Salary" = "Base Salary.x",
+         "Guaranteed_Compensation" = "Guaranteed Compensation.x",
+         "Goals_Added" = "Goals Added") %>% 
+  drop_na(Base_Salary)
+
+Player_Data %>%
+  filter(is.na(Base_Salary))
+
+Player_Data <- data.frame(Player_Data %>% 
+  mutate(Log_Goals_Added = log10(Goals_Added+(abs(min(Player_Data$Goals_Added))+1.01))))
+
+```
+
+```{r}
+  
+  ### Initialize population
+      initializePopulation = function(k){
+        
+        function(GA){
+          mat = matrix(0, ncol = GA@nBits, nrow = GA@popSize)
+          
+          for(i in seq_len(GA@popSize))
+            mat[i, sample(GA@nBits, k)] = 1
+          
+          for (i in 1:length(position_values$input_value)) {
+            if (position_values$input_value[i] > 0) {
+              ind = which(Player_Data$Position 
+                          == names(position_values$input_value)[i])
+              mat[, ind[sample(length(ind), 1)]] = 1
+            }
+          }
+          
+          mat
+        }
+      }
+      
+      ### Crossover function
+        # custom function that performs crossover while keeping the number of 
+        # selected bits equal to the selected population
+      crossoverFunction = function(GA, parents){
+        
+        parents = GA@population[parents,] %>%
+          apply(1, function(x) which(x == 1)) %>%
+          t()
+        
+        parents_diff = list("vector", 2)
+        parents_diff[[1]] = setdiff(parents[2,], parents[1,])
+        parents_diff[[2]] = setdiff(parents[1,], parents[2,])
+        
+        children_ind = list("vector", 2)
+        for(i in 1:2){
+          k = length(parents_diff[[i]])
+          change_k = sample(k, sample(ceiling(k/2), 1))
+          children_ind[[i]] = if(length(change_k) > 0){
+            c(parents[i, -change_k], parents_diff[[i]][change_k])
+          } else {
+            parents[i,]
+          }
+        }
+        
+        children = matrix(0, nrow = 2, ncol = GA@nBits)
+        for(i in 1:2)
+          children[i, children_ind[[i]]] = 1
+        
+        list(children = children, fitness = c(NA, NA))
+      }
+      
+      ### Mutation function
+        # custom function that performs mutation while keeping the number of 
+        # selected bits equal to the selected population
+      mutationFunction = function(GA, parent){
+        ind = which(GA@population[parent,] == 1)
+        n_change = sample(sel_pop, 1)
+        ind[sample(length(ind), n_change)] = 
+          sample(setdiff(seq_len(GA@nBits), ind), n_change)
+        parent = integer(GA@nBits)
+        parent[ind] = 1
+        
+        parent
+      }
+      
+      ### Fitness function
+      # objective function that sums the goals_added value and checks the
+      # constraint of number of players and their positions
+      fitness = function(x)
+      {
+        current_goals_added=x%*%Player_Data$Log_Goals_Added
+        current_salary=x%*%Player_Data$Guaranteed_Compensation
+        positions = Player_Data$Position[x == 1] # positions of selected players
+        positions_count = table(positions) # count of players in each position
+        
+        if(current_salary>max_salary) {
+          return(0) # Penalty for exceeding the max salary
+        }
+        else if (all(positions_count == positions_required)) {
+          return(current_goals_added) # meets the players and positions constraint
+        }
+        else {
+          return(0)
+        }
+      }
+```
+
+```{r}
+
+  n = 200
+  sel_pop = 5
+  max_salary = 1750000
+  
+  # n = 200
+  # sel_pop = 5
+  # max_salary = 1750000
+  
+  position_values = data.frame(position = c("ST","CM","CB"),
+                                   input_value = c(2,2,1))
+  
+  positions_required = position_values %>% 
+        spread(position, input_value, fill = 0)
+  
+  # Original genetic algorithm function
+      # GA = ga(
+      #   type = "binary",
+      #   fitness = fitness,
+      #   nBits = nrow(Filtered_Player_Data),
+      #   population = initializePopulation(sel_pop),
+      #   crossover = crossoverFunction,
+      #   mutation = mutationFunction,
+      #   run = 125,
+      #   pmutation = .25,
+      #   maxiter = 300,
+      #   popSize = 30,
+      #   monitor = FALSE
+      # )
+
+```
+
+
+# Testing the highest fitness value per population size
+
+```{r}
+  # 190
+  pop_test_data = data.frame(popSize = numeric(0), 
+                         value = numeric(0))
+  
+  pop_size = c(seq(10, 200, by = 10))
+
+  for (p in pop_size){
+    fitnessValues = c()
+    for (x in 1:10) {
+      GA <- ga(
+        type = "binary",
+        fitness = fitness,
+        nBits = nrow(Player_Data),
+        population = initializePopulation(sel_pop),
+        crossover = crossoverFunction,
+        mutation = mutationFunction,
+        run = 225,
+        pmutation = .7,
+        maxiter = 950,
+        popSize = p,
+        monitor = FALSE
+      )
+      
+      fitnessValues = append(fitnessValues, GA@fitnessValue)
+    }
+  
+    pop_test_data = pop_test_data %>% 
+      add_row(popSize = p, 
+              value = mean(fitnessValues))
+  }    
+
+pop_test_data %>% filter(value == max(pop_test_data$value))
+  
+pop_test_data
+```
+
+# Plotting the highest fitness value per population size
+
+```{r}
+# Create line graph with multiple lines
+ggplot(data = pop_test_data, 
+       aes(x = popSize, 
+           y = value)) +
+  geom_smooth(method = "loess", span = 0.35, se = FALSE) +
+  geom_line() +
+  geom_vline(xintercept = sort(subset(pop_test_data, 
+                                      value == max(pop_test_data$value))[[1]])[1],
+             colour="red") +
+  scale_x_continuous(breaks = seq(10, 200, by = 20)) +
+  labs(x = "Population Size",
+       y = "Fitness Value",
+       title = "Figure 3",
+       subtitle = "Objective function fitness value by population size") +
+  theme_bw()
+
+```
+
+# Testing the highest fitness value per runs
+
+```{r}
+  #225
+  run_test_data = data.frame(run_nums = numeric(0), 
+                         value = numeric(0))
+  
+  run_nums = c(seq(50, 500, by = 25))
+
+  for (r in run_nums){
+    fitnessValues = c()
+    for (x in 1:10) {
+      GA <- ga(
+        type = "binary",
+        fitness = fitness,
+        nBits = nrow(Player_Data),
+        population = initializePopulation(sel_pop),
+        crossover = crossoverFunction,
+        mutation = mutationFunction,
+        run = r,
+        pmutation = .7,
+        maxiter = 950,
+        popSize = 200,
+        monitor = FALSE
+      )
+      
+      fitnessValues = append(fitnessValues, GA@fitnessValue)
+    }
+  
+    run_test_data = run_test_data %>% 
+      add_row(run_nums = r, 
+              value = mean(fitnessValues))
+  }    
+
+run_test_data %>% filter(value == max(run_test_data$value))
+  
+run_test_data
+```
+
+# Plotting the highest fitness value per runs
+
+```{r}
+# Create line graph with multiple lines
+ggplot(data = run_test_data, 
+       aes(x = run_nums, 
+           y = value)) +
+  geom_smooth(method = "loess", span = 0.5, se = FALSE) +
+  geom_line() +
+  geom_vline(xintercept = sort(subset(run_test_data, 
+                                      value == max(run_test_data$value))[[1]])[1],
+             colour="red") +
+  scale_x_continuous(breaks = seq(50, 500, by = 50)) +
+
+  labs(x = "Number of Runs",
+       y = "Fitness Value",
+       title = "Figure 2",
+       subtitle = "Objective function fitness value by number of runs") +
+  theme_bw()
+
+```
+
+# Testing the "max_iter" parameter
+
+```{r}
+#950
+max_iter_test_data = data.frame(max_iterations = numeric(0), 
+                       value = numeric(0))
+
+max_iterations = c(seq(100, 1000, by = 25))
+
+for (m in max_iterations) {
+    fitnessValues = c()
+    for (x in 1:10) {
+      GA <- ga(
+        type = "binary",
+        fitness = fitness,
+        nBits = nrow(Player_Data),
+        population = initializePopulation(sel_pop),
+        crossover = crossoverFunction,
+        mutation = mutationFunction,
+        run = 225,
+        pmutation = .7,
+        maxiter = m,
+        popSize = 200,
+        monitor = FALSE
+      )
+      
+      fitnessValues = append(fitnessValues, GA@fitnessValue)
+    }
+  
+          max_iter_test_data = max_iter_test_data %>% 
+      add_row(max_iterations = m,
+              value = mean(fitnessValues))
+}
+
+max_iter_test_data %>% filter(value == max(max_iter_test_data$value))
+
+```
+
+# Plotting the highest fitness value per max iteration value
+
+```{r}
+# Create line graph with multiple lines
+ggplot(data = max_iter_test_data, 
+       aes(x = max_iterations, 
+           y = value, 
+           # color = factor(attempt_num), 
+           # linetype = factor(attempt_num)
+           )) +
+  geom_line() +
+  geom_smooth(method = "loess", span = 0.5, se = FALSE) +
+  geom_vline(xintercept = sort(subset(max_iter_test_data, 
+                                      value == max(max_iter_test_data$value))[[1]])[1],
+             colour="red") +
+  scale_x_continuous(breaks = seq(100, 1000, by = 100)) +
+  # geom_bar(stat = "identity") +
+  labs(x = "Max number of iterations",
+       y = "Fitness Value",
+       title = "Figure 1", 
+       subtitle = "Objective function fitness value by max number of iterations") +
+  theme_bw()
+
+
+```
+
+# Testing the highest fitness value per mutation probability value
+
+```{r}
+
+mutation_test_data = data.frame(p_mutation = numeric(0), 
+                         value = numeric(0))
+    
+  p_mutation = c(seq(.1, .95, by = .05))
+  
+for (p in p_mutation) {
+    fitnessValues = c()
+    for (x in 1:10) {
+      GA <- ga(
+        type = "binary",
+        fitness = fitness,
+        nBits = nrow(Player_Data),
+        population = initializePopulation(sel_pop),
+        crossover = crossoverFunction,
+        mutation = mutationFunction,
+        run = 225,
+        pmutation = p,
+        maxiter = 950,
+        popSize = 200,
+        monitor = FALSE
+      )
+      
+      fitnessValues = append(fitnessValues, GA@fitnessValue)
+    }
+  
+          mutation_test_data = mutation_test_data %>% 
+      add_row(p_mutation = p,
+              value = mean(fitnessValues))
+}
+
+mutation_test_data
+
+subset(mutation_test_data, value == max(mutation_test_data$value))[[1]]
+
+```
+
+# Plotting the highest fitness value per mutation probability value
+
+```{r}
+
+ggplot(data = mutation_test_data, 
+       aes(x = p_mutation, y = value)) + 
+  geom_smooth(method = "loess", span = 0.65, se = FALSE) +
+  geom_line() +
+  geom_vline(xintercept = sort(subset(mutation_test_data, 
+                                      value == max(mutation_test_data$value))[[1]])[1],
+             colour="red") +
+  scale_x_continuous(breaks = seq(.1, .9, by = .1)) +
+  labs(x = "Mutation Probability", 
+       y = "Fitness Value", 
+       title = "Figure 5", 
+       subtitle = "Objective function fitness value by mutation probability") + 
+  theme_bw()
+
+```
+
+# Testing the algorithm execution time
+
+```{r}
+
+time_test_data = data.frame(iteration = numeric(0), 
+                         time = numeric(0))
+# pm = sort(subset(mutation_test_data, value == max(mutation_test_data$value))[[1]])[1]
+  
+    for (x in 1:50) {
+      execution_time <- system.time(
+      GA <- ga(
+        type = "binary",
+        fitness = fitness,
+        nBits = nrow(Player_Data),
+        population = myInit(sel_pop),
+        crossover = myCrossover,
+        mutation = myMutation,
+        run = 225,
+        pmutation = .7,
+        maxiter = 950,
+        popSize = 200,
+        monitor = FALSE
+      ))[[3]]
+      
+      time_test_data = time_test_data %>% 
+      add_row(iteration = x,
+              time = execution_time)
+    }
+  
+mean(time_test_data$time)
+
+```
+
+```{r}
+
+ggplot(Player_Data, aes(x=Guaranteed_Compensation, y=Log_Goals_Added)) + 
+  geom_point() + 
+  geom_smooth(method=lm)
+
+```
+
+# Testing the algorithm execution time
+
+```{r}
+
+time_test_data = data.frame(iteration = numeric(0), 
+                         time = numeric(0))
+  
+    for (x in 1:50) {
+      execution_time <- system.time(
+      GA <- ga(
+        type = "binary",
+        fitness = fitness,
+        nBits = nrow(Player_Data),
+        population = myInit(sel_pop),
+        crossover = myCrossover,
+        mutation = myMutation,
+        run = 125,
+        pmutation = .25,
+        maxiter = 300,
+        popSize = 30,
+        monitor = FALSE
+      ))[[3]]
+      
+      time_test_data = time_test_data %>% 
+      add_row(iteration = x,
+              time = execution_time)
+    }
+  
+mean(time_test_data$time)
+
+```
+
+```{r}
+
+ggplot(Player_Data, aes(x=Guaranteed_Compensation, y=Log_Goals_Added)) + 
+  geom_point() + 
+  geom_smooth(method=lm)
+
+```
+
+
+```{r}
+test_data = data.frame(exec_num = numeric(0), 
+                         value = numeric(0))
+
+  
+    fitnessValues = c()
+    for (x in 1:10) {
+      GA <- ga(
+        type = "binary",
+        fitness = fitness,
+        nBits = nrow(Player_Data),
+        population = initializePopulation(sel_pop),
+        crossover = crossoverFunction,
+        mutation = mutationFunction,
+        run = 225,
+        pmutation = .7,
+        maxiter = 950,
+        popSize = 200,
+        monitor = FALSE
+      )
+      
+      fitnessValues = append(fitnessValues, GA@fitnessValue)
+    }
+  
+test_data = test_data %>% 
+  add_row(exec_num = c(1:10), 
+          value = mean(fitnessValues))
+# }
+
+mean(test_data$value)
+
+```
+
+
+```{r}
+
+test_data = data.frame(exec_num = numeric(0), 
+                         value = numeric(0))
+
+  
+    fitnessValues = c()
+    for (x in 1:1) {
+      GA <- ga(
+        type = "binary",
+        fitness = fitness,
+        nBits = nrow(Player_Data),
+        population = initializePopulation(sel_pop),
+        crossover = crossoverFunction,
+        mutation = mutationFunction,
+        run = 125,
+        pmutation = .25,
+        maxiter = 300,
+        popSize = 30,
+        monitor = FALSE
+      )
+      
+      fitnessValues = append(fitnessValues, GA@fitnessValue)
+    }
+  
+test_data = test_data %>% 
+  add_row(exec_num = c(1:10), 
+          value = mean(fitnessValues))
+# }
+
+mean(test_data$value)
+
+```

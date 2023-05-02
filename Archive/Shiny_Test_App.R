@@ -51,46 +51,47 @@ path <- "Data"
 url <- paste0("https://api.github.com/repos/", owner, "/", repo, "/contents/", path, "?ref=main")
 
 # Make a GET request to the API endpoint and convert the response to a data frame
-response <- GET(url)
-data <- content(response, "text")
-df <- fromJSON(data)
-
-ga_salary_data <- data.frame()
-
-ga_salary_data_url = df %>%
-  filter(name == "2022_MLS_GoalsAdded_and_Salary_Data.xlsx") %>%
-  select('download_url') %>%
-  pull()
-
-# Steps to pull files from a different folder in the repo
-path <- "Data/MLS_Player_Season_Stats"
-
-url <- paste0("https://api.github.com/repos/", owner, "/", repo, "/contents/", path, "?ref=main")
-
-response <- GET(url)
-data <- content(response, "text")
-df <- fromJSON(data)
-
-temp_file <- tempfile()
-download.file(ga_salary_data_url, temp_file, mode = "wb")
+# response <- GET(url)
+# data <- content(response, "text")
+# df <- fromJSON(data)
+# 
+# ga_salary_data <- data.frame()
+# 
+# ga_salary_data_url = df %>%
+#   filter(name == "2022_MLS_GoalsAdded_and_Salary_Data.xlsx") %>%
+#   select('download_url') %>%
+#   pull()
+# 
+# # Steps to pull files from a different folder in the repo
+# path <- "Data/MLS_Player_Season_Stats"
+# 
+# url <- paste0("https://api.github.com/repos/", owner, "/", repo, "/contents/", path, "?ref=main")
+# 
+# response <- GET(url)
+# data <- content(response, "text")
+# df <- fromJSON(data)
+# 
+# temp_file <- tempfile()
+# download.file(ga_salary_data_url, temp_file, mode = "wb")
 
 ## Comment all lines above and up to the library import statements
   ## Uncomment the below line and add files to your local machine 
-# temp_file = ".../capstone/Data/2022_MLS_GoalsAdded_and_Salary_Data.xlsx"
+temp_file = "/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/2022_MLS_GoalsAdded_and_Salary_Data.xlsx"
 
 Player_Goals_Added <- read_excel(temp_file, sheet = "Player_Goals_Added")
 Player_Salary = read_excel(temp_file, sheet = "Player_Salary") %>%
   select(-c("Season"))
 
-MLSPA_Player_Salary_202209 = 
-  read_csv("http://s3.amazonaws.com/mlspa/9_2_2022-Roster-Freeze-Salary-List.csv?mtime=20221017131703") %>%
-  select(-c("Nickname")) %>% 
-  mutate(`2022 Base Salary` = floor(as.numeric(gsub("[$,]", "", `2022 Base Salary`)))) %>%
-  mutate(`2022 Guar. Comp.` = floor(as.numeric(gsub("[$,]", "", `2022 Guar. Comp.`)))) %>%
-  mutate(Source = 9)
+# MLSPA_Player_Salary_202209 = 
+#   read_csv("http://s3.amazonaws.com/mlspa/9_2_2022-Roster-Freeze-Salary-List.csv?mtime=20221017131703") %>%
+#   select(-c("Nickname")) %>% 
+#   mutate(`2022 Base Salary` = floor(as.numeric(gsub("[$,]", "", `2022 Base Salary`)))) %>%
+#   mutate(`2022 Guar. Comp.` = floor(as.numeric(gsub("[$,]", "", `2022 Guar. Comp.`)))) %>%
+#   mutate(Source = 9)
 
 MLSPA_Player_Salary202204 = 
-  read_csv("http://s3.amazonaws.com/mlspa/2022_salary_list_4.15__for_site.csv?mtime=20220517164257") %>%
+  # read_csv("http://s3.amazonaws.com/mlspa/2022_salary_list_4.15__for_site.csv?mtime=20220517164257") %>%
+  read_csv("/Users/charleswhorton/Desktop/GradSchool/Capstone/capstone/Data/MLSPA_Player_Salary_202204.csv") %>%
   mutate(`2022 Base Salary` = floor(as.numeric(gsub("[$,]", "", `2022 Base Salary`)))) %>%
   mutate(`2022 Guar. Comp.` = floor(as.numeric(gsub("[$,]", "", `2022 Guar. Comp.`)))) %>%
   mutate(Source = 4)
@@ -98,7 +99,8 @@ MLSPA_Player_Salary202204 =
 MLSPA_Player_Salary202204 = rename(MLSPA_Player_Salary202204, "Position" = "Playing Position")
 
 MLSPA_Player_Salary =
-  union(MLSPA_Player_Salary_202209, MLSPA_Player_Salary202204)
+  # union(MLSPA_Player_Salary_202209, MLSPA_Player_Salary202204)
+  MLSPA_Player_Salary202204
 
 MLSPA_Player_Salary = MLSPA_Player_Salary %>%
   mutate(Player = paste(MLSPA_Player_Salary$'First Name', MLSPA_Player_Salary$'Last Name', sep = " "))
@@ -201,13 +203,14 @@ shinyApp(
       
       # Call the genetic algorithm function here with input_num() as input
       # Replace "genetic_algorithm_function" with the name of your function
-      n = 25
+      n = 50
       sel_pop = input_num()
       type = 'binary'
       max_salary = max_salary()
+      position_constraints = c('AM', 'CB')
       
       Player_Data = data.frame(slice(Player_Data, 1:n)) %>%
-        select(c('Player', 'Guaranteed_Compensation', 'Log_Goals_Added'))
+        select(c('Player', 'Position', 'Guaranteed_Compensation', 'Log_Goals_Added'))
       
       ### GA Functions
       
@@ -286,19 +289,23 @@ shinyApp(
       
       GA <- ga(
         type = "binary",
+        lower = position_constraints, 
+        upper = position_constraints,
         fitness = fitness,
         nBits = nrow(Player_Data),
         population = myInit(sel_pop),
         crossover = myCrossover,
         mutation = myMutation,
-        run = 150,
-        pmutation = .8,
-        maxiter = 150,
-        popSize = 50
+        run = 125,
+        pmutation = .25,
+        maxiter = 300,
+        popSize = 30,
+        monitor = FALSE
       )
 
       output$table = renderDataTable(Player_Data[GA@solution == 1,] %>%
                                        select(c('Player',
+                                                'Position',
                                                 'Log_Goals_Added',
                                                 'Guaranteed_Compensation')))
       

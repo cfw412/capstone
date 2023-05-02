@@ -1,0 +1,14 @@
+name: capstone
+title: capstone
+username:
+account: cfw-capstone-playeroptimizationapp
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 8946988
+bundleId: 7157476
+url: https://cfw-capstone-playeroptimizationapp.shinyapps.io/capstone/
+when: 1682905984.14609
+lastSyncTime: 1682905984.1461
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData|Charlie Whorton Capstone Project Proposal.docx|genetic_algorithm_sandbox.Rmd|parameter_tuning.Rmd|Player_Data.csv|predictive_model_sandbox.Rmd|README.md|Shiny_Test_App_sandbox.R|Shiny_Test_App.R|Data|Tracking_data_sample
